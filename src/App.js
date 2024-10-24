@@ -1,16 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import StarRating from './StarRating';
+import { useMovies } from './useMovies';
+import { useLocalStorageState } from './useLocalStorageState';
+import { useKey } from './useKey';
 
 const average = (arr) => arr.reduce((acc, cur, i, arr) => acc + cur / arr.length, 0);
 const key = '55798958';
 
 export default function App() {
-  const [movies, setMovies] = useState([]);
-  const [watched, setWatched] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState(null);
+  const { movies, isLoading, error } = useMovies(query);
+  const [watched, setWatched] = useLocalStorageState([], 'watched');
 
   function handleSelectMovie(id) {
     setSelectedId((selectedId) => (selectedId === id ? null : id));
@@ -24,40 +25,6 @@ export default function App() {
   function handleAddWatched(movie) {
     setWatched((watched) => [...watched, movie]);
   }
-
-  useEffect(() => {
-    const controller = new AbortController();
-    async function fetchMovies() {
-      try {
-        setIsLoading(true);
-        setError('');
-        const res = await fetch(`http://www.omdbapi.com/?i=tt3896198&apikey=${key}&s=${query}`, {
-          signal: controller.signal,
-        });
-        if (!res.ok) throw new Error('Network response was not ok');
-        const data = await res.json();
-        if (data.Response === 'False') {
-          throw new Error('Movie not found');
-        }
-        setMovies(data.Search);
-        setError('');
-      } catch (error) {
-        if (error.name !== 'AbortError') setError(error.message);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    if (!query || query.length < 3) {
-      return;
-    }
-
-    fetchMovies();
-
-    return function () {
-      controller.abort();
-    };
-  }, [query]);
 
   return (
     <>
@@ -119,6 +86,15 @@ function ErrorMessage({ message }) {
 }
 
 function Search({ query, setQuery }) {
+  const inputRef = useRef(null);
+
+  useKey('Enter', () => {
+    if (document.activeElement === inputRef.current) {
+      return;
+    }
+    inputRef.current.focus();
+    setQuery('');
+  });
   return (
     <input
       className="search"
@@ -126,6 +102,7 @@ function Search({ query, setQuery }) {
       placeholder="Search movies..."
       value={query}
       onChange={(e) => setQuery(e.target.value)}
+      ref={inputRef}
     />
   );
 }
@@ -230,6 +207,10 @@ function Movie({ movie, handleSelectMovie }) {
 function MovieDetails({ selectedId, handleCloseMovie, handleAddWatched, watched }) {
   const [movie, setMovie] = useState({});
   const [userRating, setUserRating] = useState(0);
+  const countRef = useRef(0);
+  useEffect(() => {
+    countRef.current++;
+  }, [userRating]);
 
   const isWatched = watched.map((movie) => movie.imdbID).includes(selectedId);
   const watchedUserRating = watched.find((movie) => movie.imdbID === selectedId)?.userRating;
@@ -255,22 +236,25 @@ function MovieDetails({ selectedId, handleCloseMovie, handleAddWatched, watched 
       imdbRating: Number(imdbRating),
       runtime: Number(runtime.split(' ').at(0)),
       userRating,
+      countRatingDecisions: countRef.current,
     };
     handleAddWatched(newWatched);
     handleCloseMovie();
   }
-  useEffect(() => {
-    function callback(e) {
-      if (e.key === 'Escape') {
-        handleCloseMovie();
-      }
-    }
-    document.addEventListener('keydown', callback);
+  // useEffect(() => {
+  //   function callback(e) {
+  //     if (e.key === 'Escape') {
+  //       handleCloseMovie();
+  //     }
+  //   }
+  //   document.addEventListener('keydown', callback);
 
-    return () => {
-      document.removeEventListener('keydown', callback);
-    };
-  }, [handleCloseMovie]);
+  //   return () => {
+  //     document.removeEventListener('keydown', callback);
+  //   };
+  // }, [handleCloseMovie]);
+  useKey('Escape', handleCloseMovie);
+
   useEffect(() => {
     if (!title) return;
     document.title = `Movie | ${title}`;
